@@ -30,6 +30,26 @@ jobs:
           else
             echo "ok=true" >> "$GITHUB_OUTPUT"
           fi
+      - name: Verify Cloudflare credentials
+        if: steps.secrets.outputs.ok == 'true'
+        run: |
+          id=$(printf '%s' "$CLOUDFLARE_ACCOUNT_ID" | tr -d '[:space:]')
+          if ! printf '%s' "$id" | grep -Eq '^[0-9a-f]{32}$'; then
+            echo "::error::CLOUDFLARE_ACCOUNT_ID nu arată ca un Account ID (trebuie 32 de caractere 0-9a-f, are ${#id})."
+            exit 1
+          fi
+          accounts=$(curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" https://api.cloudflare.com/client/v4/accounts)
+          if [ "$(echo "$accounts" | jq -r .success)" != true ]; then
+            echo "::error::Tokenul nu e acceptat de Cloudflare: $(echo "$accounts" | jq -c '.errors')"
+            exit 1
+          fi
+          echo "Tokenul vede $(echo "$accounts" | jq '.result | length') cont(uri)."
+          if ! echo "$accounts" | jq -e --arg id "$id" '.result | map(.id) | index($id)' >/dev/null; then
+            echo "::error::Tokenul nu are acces la contul din CLOUDFLARE_ACCOUNT_ID (ID greșit sau token pe alt cont)."
+            exit 1
+          fi
+          echo "CLOUDFLARE_ACCOUNT_ID=$id" >> "$GITHUB_ENV"
+          echo "Cheile sunt în regulă."
       - name: Build site
         if: steps.secrets.outputs.ok == 'true'
         run: mkdir _site && cp index.html lame.min.js _site/
