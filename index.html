@@ -1,0 +1,861 @@
+<!doctype html>
+<html lang="ro">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Piano Maker</title>
+<style>
+  :root {
+    --bg:#0E121A; --panel:#161C27; --field:#1F2836; --line:#2A3445;
+    --text:#E8EDF5; --muted:#8A96A8; --accent:#4FA3FF;
+  }
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--text);
+    font-family:system-ui, "Segoe UI", sans-serif; overflow:hidden; user-select:none; }
+  #app { display:flex; flex-direction:column; height:100%; }
+  header { display:flex; flex-wrap:wrap; align-items:center; gap:10px 16px; padding:10px 16px;
+    background:var(--panel); border-bottom:1px solid var(--line); }
+  h1 { font-size:18px; margin:0 8px 0 0; letter-spacing:.3px; }
+  .group { display:flex; align-items:center; gap:6px; }
+  .group label { color:var(--muted); font-size:13px; }
+  button, select, input[type=number] {
+    font:inherit; font-size:14px; color:var(--text); background:var(--field);
+    border:1px solid var(--line); border-radius:8px; height:34px; padding:0 10px; }
+  button { cursor:pointer; display:inline-flex; align-items:center; gap:6px; }
+  button:hover { border-color:var(--accent); }
+  button svg { width:16px; height:16px; fill:currentColor; }
+  #play { background:var(--accent); border-color:var(--accent); color:#06121F; font-weight:600; min-width:96px; justify-content:center; }
+  input[type=number] { width:70px; }
+  input[type=range] { width:110px; accent-color:var(--accent); }
+  .swatch { width:26px; height:26px; padding:0; border-radius:50%; border:2px solid transparent; }
+  .swatch.on { border-color:#fff; }
+  #time { font-variant-numeric:tabular-nums; color:var(--muted); font-size:13px; min-width:120px; }
+  .help { width:100%; color:var(--muted); font-size:12px; }
+  .help b { color:var(--text); font-weight:600; }
+  #stage { flex:1; position:relative; min-height:0; }
+  canvas { position:absolute; inset:0; width:100%; height:100%; display:block; touch-action:none; }
+  #file { display:none; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Piano Maker</h1>
+
+    <div class="group">
+      <button id="home" title="La început (Home)"><svg viewBox="0 0 24 24"><path d="M6 5h2v14H6zM9.5 12 19 5v14z"/></svg></button>
+      <button id="play" title="Play / Pauză (Spațiu)"></button>
+      <span id="time"></span>
+    </div>
+
+    <div class="group">
+      <label for="bpm">Tempo</label>
+      <input id="bpm" type="number" min="30" max="300" step="any" value="100">
+    </div>
+
+    <div class="group">
+      <label for="snap">Grilă</label>
+      <select id="snap">
+        <option value="1">1 timp</option>
+        <option value="0.5" selected>1/2 timp</option>
+        <option value="0.25">1/4 timp</option>
+        <option value="0.125">1/8 timp</option>
+        <option value="0.0625">1/16 timp</option>
+        <option value="0.03125">1/32 timp</option>
+      </select>
+    </div>
+
+    <div class="group" id="colors"><label>Culoare</label></div>
+
+    <div class="group">
+      <label for="instr">Instrument</label>
+      <select id="instr"></select>
+    </div>
+
+    <div class="group">
+      <label for="zoom">Zoom</label>
+      <input id="zoom" type="range" min="30" max="800" value="90">
+    </div>
+
+    <div class="group">
+      <button id="undo" title="Înapoi (Ctrl+Z)"><svg viewBox="0 0 24 24"><path d="M12.5 8c-2.6 0-5 1-6.9 2.6L2 7v9h9l-3.6-3.6A7.9 7.9 0 0 1 20.1 16l2.3-.8A10.4 10.4 0 0 0 12.5 8z"/></svg>Înapoi</button>
+      <button id="clear">Șterge tot</button>
+      <button id="save" title="Salvează ca fișier Piano Maker (.json)"><svg viewBox="0 0 24 24"><path d="M5 20h14v-2H5zM12 16l6-6h-4V4h-4v6H6z"/></svg>Salvează</button>
+      <button id="open"><svg viewBox="0 0 24 24"><path d="M5 20h14v-2H5zM12 4l-6 6h4v6h4v-6h4z"/></svg>Deschide (MIDI / JSON)</button>
+      <button id="midi" title="Exportă ca MIDI"><svg viewBox="0 0 24 24"><path d="M5 20h14v-2H5zM12 16l6-6h-4V4h-4v6H6z"/></svg>MIDI</button>
+      <button id="mp3" title="Exportă ca MP3"><svg viewBox="0 0 24 24"><path d="M5 20h14v-2H5zM12 16l6-6h-4V4h-4v6H6z"/></svg>MP3</button>
+      <input id="file" type="file" accept=".json,.mid,.midi,application/json,audio/midi">
+    </div>
+
+    <div class="help">
+      <b>Click</b> = notă nouă · <b>trage de capătul de sus</b> = mai lungă/scurtă · <b>trage nota</b> = mut-o ·
+      <b>Shift+click</b> = selectezi mai multe note · <b>Shift+trage</b> pe gol = selectezi o zonă · <b>Ctrl+D</b> = copiază notele selectate · <b>click dreapta</b> = șterge · <b>rotița</b> = derulează · <b>Ctrl+rotița</b> = zoom ·
+      <b>Spațiu</b> = play · tastele <b>A W S E D F T G Y H U J K</b> cântă la pian
+    </div>
+  </header>
+  <div id="stage"><canvas id="cv"></canvas></div>
+</div>
+
+<script src="lame.min.js"></script>
+<script>
+(() => {
+  // ---------- date ----------
+  const LOW = 36, HIGH = 96;                 // Do2 .. Do7
+  const NAMES = ['Do','Do#','Re','Re#','Mi','Fa','Fa#','Sol','Sol#','La','La#','Si'];
+  const COLORS = ['#3FAE5A', '#4FA3FF', '#F5A623', '#E04F7A', '#9B6CFF'];
+  const isBlack = m => [1,3,6,8,10].includes(m % 12);
+  const noteName = m => NAMES[m % 12] + (Math.floor(m / 12) - 1);
+
+  let notes = [];          // {m, s, l, c, p, v}  s/l în timpi (bătăi), p = instrument (0-127 GM, 128 = tobe), v = tărie
+  let bpm = 100, snap = 0.5, ppb = 90, view = 0, color = 0, lastLen = 1, instr = 0;
+  let sel = new Set(), history = [];
+  let playing = false, playT0 = 0, playFrom = 0, voices = [];
+  const lit = new Map();   // midi -> culoare (taste apăsate de mână)
+
+  const $ = id => document.getElementById(id);
+  const cv = $('cv'), g = cv.getContext('2d');
+
+  // ---------- sunet ----------
+  let ac = null, master = null;
+  function chain(ctx) {   // volum -> compresor -> difuzoare
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -14; comp.knee.value = 10; comp.ratio.value = 6;
+    comp.attack.value = 0.005; comp.release.value = 0.2;
+    const gain = ctx.createGain(); gain.gain.value = 0.5;
+    gain.connect(comp); comp.connect(ctx.destination);
+    return gain;
+  }
+  function audio() {
+    if (!ac) { ac = new (window.AudioContext || window.webkitAudioContext)(); master = chain(ac); }
+    if (ac.state === 'suspended') ac.resume();
+    return ac;
+  }
+
+  // instrumentele: câte unul pentru fiecare familie General MIDI (8 programe), plus tobe
+  const DRUMS = 128;
+  const INSTR = [
+    { name: 'Pian',         osc: [['triangle', 1, 1], ['sine', 2, .35], ['sine', 3, .12], ['sine', 4.01, .06]], a: .006, d: 'piano', s: 0, r: .07, f: 7, vol: .42 },
+    { name: 'Clopoței',     osc: [['sine', 1, 1], ['sine', 2.76, .35], ['sine', 5.4, .12]], a: .002, d: .45, s: 0, r: .2, f: 12, vol: .32 },
+    { name: 'Orgă',         osc: [['sine', 1, 1], ['sine', 2, .5], ['sine', 3, .3], ['sine', 4, .2]], a: .012, d: 0, s: 1, r: .06, f: 10, vol: .2 },
+    { name: 'Chitară',      osc: [['triangle', 1, 1], ['sawtooth', 1, .25]], a: .003, d: .35, s: 0, r: .08, f: 5, vol: .38 },
+    { name: 'Bas',          osc: [['sine', 1, 1], ['triangle', 1, .6]], a: .006, d: .5, s: .55, r: .06, f: 4, vol: .55 },
+    { name: 'Viori',        osc: [['sawtooth', 1, .7], ['sawtooth', 1.006, .7]], a: .12, d: 0, s: 1, r: .25, f: 3, vol: .12 },
+    { name: 'Cor',          osc: [['sawtooth', 1, .5], ['triangle', 1.004, .8]], a: .15, d: 0, s: 1, r: .3, f: 2.5, vol: .14 },
+    { name: 'Alămuri',      osc: [['sawtooth', 1, 1]], a: .04, d: .3, s: .75, r: .08, f: 4, vol: .15 },
+    { name: 'Saxofon',      osc: [['square', 1, .8], ['sine', 2, .3]], a: .03, d: .3, s: .8, r: .07, f: 3, vol: .13 },
+    { name: 'Flaut',        osc: [['sine', 1, 1], ['sine', 2, .12]], a: .05, d: 0, s: 1, r: .08, f: 6, vol: .3 },
+    { name: 'Synth lead',   osc: [['sawtooth', 1, .7], ['square', 1.004, .4]], a: .01, d: .2, s: .8, r: .06, f: 5, vol: .11 },
+    { name: 'Synth pad',    osc: [['sawtooth', 1, .5], ['sawtooth', 1.008, .5], ['triangle', .5, .5]], a: .3, d: 0, s: 1, r: .5, f: 2, vol: .1 },
+    { name: 'Efecte synth', osc: [['triangle', 1, 1], ['sawtooth', 1.01, .3]], a: .2, d: 0, s: 1, r: .4, f: 3, vol: .1 },
+    { name: 'Etnic',        osc: [['triangle', 1, 1], ['sine', 3, .2]], a: .003, d: .3, s: 0, r: .1, f: 6, vol: .35 },
+    { name: 'Percuție',     osc: [['sine', 1, 1]], a: .002, d: .15, s: 0, r: .05, f: 4, vol: .5, drop: true },
+    { name: 'Efecte',       osc: [['triangle', 1, 1]], a: .05, d: .3, s: 0, r: .1, f: 3, vol: .05 },
+  ];
+  const instrOf = p => p === DRUMS ? null : INSTR[Math.floor((p | 0) / 8) % 16];
+  const instrName = p => p === DRUMS ? 'Tobe' : instrOf(p).name;
+
+  const noiseCache = new WeakMap();
+  function noise(ctx) {
+    if (!noiseCache.has(ctx)) {
+      const b = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate), d = b.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      noiseCache.set(ctx, b);
+    }
+    return noiseCache.get(ctx);
+  }
+  // tobe după numărul notei General MIDI (35 = toba mare, 38 = toba mică, 42 = hi-hat ...)
+  function drum(m, when, vel, ctx, dest) {
+    const out = ctx.createGain(); out.connect(dest);
+    const env = (peak, dur) => { out.gain.setValueAtTime(peak * vel, when); out.gain.setTargetAtTime(0, when + 0.002, dur / 3); return when + dur * 2; };
+    const tone = (f1, f2, dur, peak) => {
+      const o = ctx.createOscillator(); o.type = 'sine';
+      o.frequency.setValueAtTime(f1, when); o.frequency.exponentialRampToValueAtTime(f2, when + dur * 0.6);
+      o.connect(out); o.start(when); o.stop(env(peak, dur));
+    };
+    const hiss = (type, freq, dur, peak, q = 1) => {
+      const s = ctx.createBufferSource(); s.buffer = noise(ctx);
+      const f = ctx.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
+      s.connect(f); f.connect(out); s.start(when); s.stop(env(peak, dur));
+    };
+    if (m <= 36) tone(150, 45, 0.3, 1);                               // toba mare
+    else if (m === 38 || m === 40) { hiss('bandpass', 1800, 0.18, 0.8, 0.7); tone(220, 160, 0.1, 0.4); }  // toba mică
+    else if (m === 37 || m === 39) hiss('bandpass', 1300, 0.14, 1, 1.5);  // palme / rimshot
+    else if ([41, 43, 45, 47, 48, 50].includes(m)) tone(80 + (m - 41) * 18, 50 + (m - 41) * 10, 0.3, 0.8);  // tom-uri
+    else if (m === 42 || m === 44) hiss('highpass', 7500, 0.05, 0.5);  // hi-hat închis
+    else if (m === 46) hiss('highpass', 7000, 0.3, 0.45);              // hi-hat deschis
+    else if (m === 49 || m === 52 || m === 55 || m === 57) hiss('highpass', 5000, 0.9, 0.4);  // crash
+    else if (m === 51 || m === 53 || m === 59) hiss('bandpass', 6000, 0.45, 0.3, 0.5);         // ride
+    else hiss('bandpass', 2500 + (m % 12) * 300, 0.12, 0.5, 2);       // restul (shaker, cowbell...)
+    return { release() {}, kill() { out.gain.cancelScheduledValues(0); out.gain.setValueAtTime(0, ctx.currentTime); } };
+  }
+
+  // o notă: întoarce { release(t), kill() }
+  function voice(m, when, p = 0, v = 100, ctx = ac, dest = master) {
+    const vel = 0.25 + 0.75 * Math.min(1, v / 127);
+    if (p === DRUMS) return drum(m, when, vel, ctx, dest);
+    const ins = instrOf(p), f = 440 * Math.pow(2, (m - 69) / 12);
+    const out = ctx.createGain(), lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = Math.min(f * ins.f, 12000);
+    lp.connect(out); out.connect(dest);
+    const peak = ins.vol * vel;
+    const decay = ins.d === 'piano' ? 0.6 + (HIGH - m) / 60 : ins.d;
+    out.gain.setValueAtTime(0, when);
+    out.gain.linearRampToValueAtTime(peak, when + ins.a);
+    if (ins.s < 1) out.gain.setTargetAtTime(peak * ins.s, when + ins.a, decay);
+    const oscs = ins.osc.map(([type, mul, vol]) => {
+      const o = ctx.createOscillator(), og = ctx.createGain();
+      o.type = type; og.gain.value = vol;
+      if (ins.drop) { o.frequency.setValueAtTime(f * mul * 1.6, when); o.frequency.exponentialRampToValueAtTime(f * mul, when + 0.05); }
+      else o.frequency.value = f * mul;
+      o.connect(og); og.connect(lp); o.start(when);
+      return o;
+    });
+    let done = false;
+    return {
+      release(t) {   // fără cancelScheduledValues: merge la fel și în Firefox
+        if (done) return; done = true;
+        const tt = Math.max(t, when + ins.a);
+        out.gain.setTargetAtTime(0, tt, ins.r / 3);
+        oscs.forEach(o => { try { o.stop(tt + ins.r * 3 + 0.05); } catch (e) {} });
+      },
+      kill() {
+        const t = ctx.currentTime;
+        out.gain.cancelScheduledValues(0);
+        out.gain.setValueAtTime(0, t);
+        oscs.forEach(o => { try { o.stop(t + 0.02); } catch (e) {} });
+      }
+    };
+  }
+  // cântă o notă scurt și aprinde clapa ei
+  function blip(m, dur = 0.35, p = instr, col = COLORS[color]) {
+    audio(); voice(m, ac.currentTime, p).release(ac.currentTime + dur);
+    lit.set(m, col); clearTimeout(blip['t' + m]);
+    blip['t' + m] = setTimeout(() => lit.delete(m), Math.max(150, dur * 1000));
+  }
+  const hear = n => blip(n.m, 0.35, n.p, COLORS[n.c]);
+
+  // ---------- istoric + salvare ----------
+  const snapshot = () => JSON.stringify(notes);
+  function remember() { history.push(snapshot()); if (history.length > 60) history.shift(); }
+  function undo() { if (history.length) { notes = JSON.parse(history.pop()); sel.clear(); store(); } }
+  function store() {
+    try { localStorage.setItem('pianomaker.song', JSON.stringify({ bpm, notes })); } catch (e) {}
+  }
+  function load(data) {
+    if (!data || !Array.isArray(data.notes)) return false;
+    notes = data.notes.filter(n => n && n.m >= LOW && n.m <= HIGH && n.l > 0 && n.s >= 0)
+      .map(n => ({ m: n.m | 0, s: +n.s, l: +n.l, c: (n.c | 0) % COLORS.length,
+        p: Math.max(0, Math.min(DRUMS, n.p | 0)), v: Math.max(1, Math.min(127, n.v == null ? 100 : n.v | 0)) }));
+    if (data.bpm) { bpm = Math.max(30, Math.min(300, +data.bpm)); $('bpm').value = bpm; }
+    sel.clear(); view = 0;
+    return true;
+  }
+  function demo() {   // Oda bucuriei
+    const mel = [[64,1],[64,1],[65,1],[67,1],[67,1],[65,1],[64,1],[62,1],[60,1],[60,1],[62,1],[64,1],[64,1.5],[62,.5],[62,2]];
+    let t = 0;
+    const out = mel.map(([m, l]) => { const n = { m, s: t, l, c: 0, p: 0, v: 100 }; t += l; return n; });
+    [[48,0],[43,4],[48,8],[43,12]].forEach(([m, s]) => out.push({ m, s, l: 4, c: 1, p: 0, v: 80 }));
+    return { bpm: 110, notes: out };
+  }
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem('pianomaker.song')); } catch (e) {}
+  if (!load(saved) || !notes.length) load(demo());
+
+  // ---------- geometrie ----------
+  let W = 0, H = 0, KH = 0, RH = 0, keys = [], whiteW = 0;
+  function layout() {
+    const r = cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    W = r.width; H = r.height;
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    KH = Math.round(Math.min(150, Math.max(80, H * 0.2)));
+    RH = H - KH;
+    let whites = 0;
+    for (let m = LOW; m <= HIGH; m++) if (!isBlack(m)) whites++;
+    whiteW = W / whites;
+    keys = []; let wi = 0;
+    for (let m = LOW; m <= HIGH; m++) {
+      if (isBlack(m)) {
+        const bw = whiteW * 0.62;
+        keys[m] = { m, black: true, x: wi * whiteW - bw / 2, w: bw };
+      } else {
+        keys[m] = { m, black: false, x: wi * whiteW, w: whiteW }; wi++;
+      }
+    }
+  }
+  const yOf = t => RH - (t - view) * ppb;
+  const tOf = y => view + (RH - y) / ppb;
+  function pitchAt(x, y) {
+    const blackDepth = y >= RH ? RH + KH * 0.62 : Infinity;   // pe clape, negrele sunt mai scurte
+    if (y < blackDepth)
+      for (let m = LOW; m <= HIGH; m++) { const k = keys[m]; if (k.black && x >= k.x && x < k.x + k.w) return m; }
+    const wi = Math.max(0, Math.floor(x / whiteW));
+    let i = 0;
+    for (let m = LOW; m <= HIGH; m++) if (!keys[m].black) { if (i === wi) return m; i++; }
+    return HIGH;
+  }
+  function noteRect(n) {
+    const k = keys[n.m], inset = k.black ? 1 : 2;
+    const y1 = yOf(n.s), y2 = yOf(n.s + n.l);
+    return { x: k.x + inset, y: y2, w: k.w - inset * 2, h: y1 - y2 };
+  }
+  function noteAt(x, y) {
+    for (let i = notes.length - 1; i >= 0; i--) {       // negrele se desenează deasupra
+      const n = notes[i];
+      if (!keys[n.m].black) continue;
+      const r = noteRect(n);
+      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return n;
+    }
+    for (let i = notes.length - 1; i >= 0; i--) {
+      const n = notes[i];
+      if (keys[n.m].black) continue;
+      const r = noteRect(n);
+      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return n;
+    }
+    return null;
+  }
+
+  // ---------- desen ----------
+  function roundRect(x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    g.beginPath();
+    g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
+    g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
+  }
+  function shade(hex, k) {
+    const n = parseInt(hex.slice(1), 16);
+    const f = c => Math.max(0, Math.min(255, Math.round(c * k)));
+    return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+  }
+  function draw() {
+    const now = playing ? (ac.currentTime - playT0) * bpm / 60 + playFrom : view;
+    if (playing) {
+      view = now;
+      pump();
+      if (now > playEnd + 1) stop(true);
+    }
+
+    // fundal + culoare pe benzi
+    g.fillStyle = '#0E121A'; g.fillRect(0, 0, W, RH);
+    for (let m = LOW; m <= HIGH; m++) {
+      const k = keys[m];
+      if (k.black) { g.fillStyle = 'rgba(0,0,0,0.28)'; g.fillRect(k.x, 0, k.w, RH); }
+    }
+    g.lineWidth = 1;
+    for (let m = LOW; m <= HIGH; m++) {
+      const k = keys[m];
+      if (k.black) continue;
+      const pc = m % 12;
+      if (pc === 0 || pc === 5) {
+        g.strokeStyle = pc === 0 ? 'rgba(255,255,255,0.13)' : 'rgba(255,255,255,0.05)';
+        g.beginPath(); g.moveTo(Math.round(k.x) + 0.5, 0); g.lineTo(Math.round(k.x) + 0.5, RH); g.stroke();
+      }
+    }
+
+    // grila de timp
+    const tTop = tOf(0);
+    const step = snap * ppb >= 6 ? snap : snap * ppb >= 3 ? snap * 2 : Math.max(snap, 0.25);   // linii prea dese = zgomot
+    for (let t = Math.floor(view / step) * step; t <= tTop; t += step) {
+      if (t < 0) continue;
+      const y = Math.round(yOf(t)) + 0.5;
+      const beat = Math.abs(t - Math.round(t)) < 1e-6;
+      const bar = beat && Math.round(t) % 4 === 0;
+      g.strokeStyle = bar ? 'rgba(255,255,255,0.22)' : beat ? 'rgba(255,255,255,0.09)' : 'rgba(255,255,255,0.035)';
+      g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke();
+      if (bar) {
+        g.fillStyle = 'rgba(255,255,255,0.45)'; g.font = '11px system-ui, sans-serif';
+        g.fillText(String(Math.round(t) / 4 + 1), 4, y - 4);
+      }
+    }
+
+    // note
+    const active = new Map(lit);
+    g.save(); g.beginPath(); g.rect(0, 0, W, RH); g.clip();
+    const order = notes.filter(n => !keys[n.m].black).concat(notes.filter(n => keys[n.m].black));
+    for (const n of order) {
+      if (n.s > tTop || n.s + n.l < view - 0.01) {
+        continue;
+      }
+      if (playing && n.s <= now && now < n.s + n.l) active.set(n.m, COLORS[n.c]);
+      const r = noteRect(n), col = COLORS[n.c];
+      const grad = g.createLinearGradient(r.x, 0, r.x + r.w, 0);
+      grad.addColorStop(0, shade(col, 1.15)); grad.addColorStop(1, shade(col, 0.85));
+      roundRect(r.x, r.y, r.w, r.h, 5);
+      g.fillStyle = grad; g.fill();
+      g.lineWidth = sel.has(n) ? 2 : 1;
+      g.strokeStyle = sel.has(n) ? '#FFFFFF' : shade(col, 0.55);
+      g.stroke();
+      if (r.h > 8) {   // mâner de lungime
+        g.fillStyle = 'rgba(255,255,255,0.35)';
+        g.fillRect(r.x + r.w * 0.3, r.y + 3, r.w * 0.4, 2);
+      }
+      if (r.h > 22 && r.w > 18) {
+        g.fillStyle = 'rgba(0,0,0,0.55)'; g.font = `600 ${Math.min(11, r.w / 3.2)}px system-ui, sans-serif`;
+        g.textAlign = 'center';
+        g.fillText(NAMES[n.m % 12], r.x + r.w / 2, r.y + r.h - 6);
+        g.textAlign = 'left';
+      }
+    }
+    g.restore();
+
+    if (box) {   // dreptunghiul de selecție
+      const bx = Math.min(box.x1, box.x2), by = Math.min(box.y1, box.y2);
+      g.fillStyle = 'rgba(79,163,255,0.12)'; g.fillRect(bx, by, Math.abs(box.x2 - box.x1), Math.abs(box.y2 - box.y1));
+      g.strokeStyle = '#4FA3FF'; g.lineWidth = 1;
+      g.strokeRect(bx + 0.5, by + 0.5, Math.abs(box.x2 - box.x1), Math.abs(box.y2 - box.y1));
+    }
+
+    // linia de lovire
+    const lg = g.createLinearGradient(0, RH - 14, 0, RH);
+    lg.addColorStop(0, 'rgba(79,163,255,0)'); lg.addColorStop(1, 'rgba(79,163,255,0.35)');
+    g.fillStyle = lg; g.fillRect(0, RH - 14, W, 14);
+    g.fillStyle = '#4FA3FF'; g.fillRect(0, RH - 2, W, 2);
+
+    // clape
+    for (let m = LOW; m <= HIGH; m++) {
+      const k = keys[m]; if (k.black) continue;
+      const on = active.get(m);
+      g.fillStyle = on || '#F4F1EA';
+      g.fillRect(k.x, RH, k.w, KH);
+      g.strokeStyle = '#7C8290'; g.lineWidth = 1;
+      g.strokeRect(Math.round(k.x) + 0.5, RH + 0.5, Math.round(k.w), KH - 1);
+      if (m % 12 === 0) {
+        g.fillStyle = on ? '#0E121A' : '#8A8F99'; g.font = `${Math.min(12, whiteW / 2.6)}px system-ui, sans-serif`;
+        g.textAlign = 'center'; g.fillText(noteName(m), k.x + k.w / 2, RH + KH - 8); g.textAlign = 'left';
+      }
+    }
+    for (let m = LOW; m <= HIGH; m++) {
+      const k = keys[m]; if (!k.black) continue;
+      const on = active.get(m), bh = KH * 0.62;
+      g.fillStyle = on ? shade(on, 0.9) : '#1A1D24';
+      roundRect(k.x, RH - 3, k.w, bh + 3, 3); g.fill();
+      if (!on) { g.fillStyle = '#343946'; g.fillRect(k.x + 3, RH + bh - 9, k.w - 6, 5); }
+    }
+
+    // ora
+    const secs = Math.max(0, now) * 60 / bpm;
+    $('time').textContent = `Măsura ${Math.floor(Math.max(0, now) / 4) + 1} · ${Math.floor(secs / 60)}:${String(Math.floor(secs % 60)).padStart(2, '0')}`;
+    requestAnimationFrame(draw);
+  }
+
+  // ---------- redare ----------
+  const PLAY_ICON = '<svg viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg>Play';
+  const PAUSE_ICON = '<svg viewBox="0 0 24 24"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>Pauză';
+  function play() {
+    if (playing) return;
+    audio();
+    sel.clear();
+    playing = true; playFrom = Math.max(0, view); playT0 = ac.currentTime + 0.06;
+    queue = notes.filter(n => n.s >= playFrom - 1e-6).sort((a, b) => a.s - b.s);
+    qi = 0; voices = [];
+    playEnd = notes.reduce((a, n) => Math.max(a, n.s + n.l), 0);
+    pump();
+    pumpTimer = setInterval(pump, 50);   // merge și când fereastra nu e în față
+    $('play').innerHTML = PAUSE_ICON;
+  }
+  // pregătește doar notele din următoarea sfertime de secundă, nu toată melodia deodată
+  let queue = [], qi = 0, playEnd = 0, pumpTimer = 0;
+  function pump() {
+    if (!playing) return;
+    const spb = 60 / bpm, horizon = ac.currentTime + 0.25;
+    while (qi < queue.length) {
+      const n = queue[qi], t = playT0 + (n.s - playFrom) * spb;
+      if (t > horizon) break;
+      qi++;
+      if (t < ac.currentTime - 0.05) continue;   // a rămas în urmă (fereastra a stat), sare peste ea
+      const v = voice(n.m, t, n.p, n.v), end = playT0 + (n.s - playFrom + n.l) * spb;
+      v.release(end);
+      voices.push({ v, end });
+    }
+    if (voices.length > 64) voices = voices.filter(x => x.end > ac.currentTime - 2);
+  }
+  function stop(rewind) {
+    if (!playing) return;
+    playing = false;
+    clearInterval(pumpTimer);
+    voices.forEach(x => x.v.kill()); voices = [];
+    if (rewind) view = playFrom;
+    $('play').innerHTML = PLAY_ICON;
+  }
+  $('play').innerHTML = PLAY_ICON;
+  $('play').onclick = () => playing ? stop(false) : play();
+  $('home').onclick = () => { stop(false); view = 0; };
+
+  // ---------- editare cu mouse-ul ----------
+  let drag = null;   // {mode:'move'|'resize'|'box', n, off, before, orig}
+  let box = null;    // dreptunghiul de selecție {x1,y1,x2,y2}
+  const snapRound = t => Math.round(t / snap) * snap;
+  function pos(e) { const r = cv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
+  const isResize = (n, y) => { const r = noteRect(n); return (y - r.y) < Math.min(10, r.h * 0.35); };
+
+  cv.addEventListener('contextmenu', e => e.preventDefault());
+  cv.addEventListener('pointerdown', e => {
+    const { x, y } = pos(e);
+    if (y >= RH) {   // clape: doar cântă
+      blip(pitchAt(x, y), 0.6);
+      return;
+    }
+    stop(false);
+    const hit = noteAt(x, y);
+    if (e.button === 2) {   // șterge nota (sau toată selecția, dacă nota e în ea)
+      if (hit) {
+        remember();
+        const gone = sel.has(hit) ? sel : new Set([hit]);
+        notes = notes.filter(n => !gone.has(n));
+        sel.delete(hit); if (gone === sel) sel.clear();
+        store();
+      }
+      return;
+    }
+    if (e.button !== 0) return;
+    cv.setPointerCapture(e.pointerId);
+    const before = snapshot();
+    if (e.shiftKey && !hit) {   // Shift + trage pe gol = dreptunghi de selecție
+      drag = { mode: 'box', keep: new Set(sel), before };
+      box = { x1: x, y1: y, x2: x, y2: y };
+      return;
+    }
+    if (hit) {
+      if (e.shiftKey) {
+        if (sel.has(hit)) { sel.delete(hit); return; }
+        sel.add(hit);
+      } else if (!sel.has(hit)) {
+        sel = new Set([hit]);
+      }
+      showInstr(hit);
+      const resize = isResize(hit, y);
+      drag = { mode: resize ? 'resize' : 'move', n: hit, off: tOf(y) - hit.s, before, shift: e.shiftKey,
+               orig: [...sel].map(n => ({ n, m: n.m, s: n.s, l: n.l })) };
+      if (!resize) hear(hit);
+    } else {
+      const m = pitchAt(x, y);
+      const s = Math.max(0, Math.floor(tOf(y) / snap) * snap);
+      const n = { m, s, l: Math.max(snap, lastLen), c: color, p: instr, v: 100 };
+      notes.push(n); sel = new Set([n]);
+      drag = { mode: 'resize', n, off: 0, before, fresh: true, y0: y, orig: [{ n, m, s, l: n.l }] };
+      hear(n);
+    }
+  });
+  cv.addEventListener('pointermove', e => {
+    const { x, y } = pos(e);
+    if (!drag) {
+      if (y >= RH) { cv.style.cursor = 'pointer'; return; }
+      const hit = noteAt(x, y);
+      cv.style.cursor = !hit ? 'crosshair' : isResize(hit, y) ? 'ns-resize' : 'grab';
+      return;
+    }
+    if (drag.mode === 'box') {
+      box.x2 = x; box.y2 = Math.min(y, RH);
+      const bx = Math.min(box.x1, box.x2), by = Math.min(box.y1, box.y2);
+      const bw = Math.abs(box.x2 - box.x1), bh = Math.abs(box.y2 - box.y1);
+      sel = new Set(drag.keep);
+      for (const n of notes) {
+        const r = noteRect(n);
+        if (r.x < bx + bw && r.x + r.w > bx && r.y < by + bh && r.y + r.h > by) sel.add(n);
+      }
+      return;
+    }
+    drag.moved = true;
+    const n = drag.n, t = tOf(Math.min(y, RH));
+    const me = drag.orig.find(o => o.n === n);
+    if (drag.mode === 'move') {
+      cv.style.cursor = 'grabbing';
+      // cât s-a mutat nota apucată; restul selecției se mută la fel
+      let dm = pitchAt(x, Math.min(y, RH - 1)) - me.m;
+      let ds = Math.max(0, snapRound(t - drag.off)) - me.s;
+      for (const o of drag.orig) {
+        dm = Math.max(dm, LOW - o.m); dm = Math.min(dm, HIGH - o.m);
+        ds = Math.max(ds, -o.s);
+      }
+      const changed = me.m + dm !== n.m || me.s + ds !== n.s;
+      for (const o of drag.orig) { o.n.m = o.m + dm; o.n.s = o.s + ds; }
+      if (changed) hear(n);   // se aude nota acolo unde ai mutat-o
+    } else {
+      cv.style.cursor = 'ns-resize';
+      const end = snapRound(t);
+      if (!drag.fresh || Math.abs(y - drag.y0) > 3) {
+        const dl = Math.max(snap, end - n.s) - me.l;
+        for (const o of drag.orig) o.n.l = Math.max(snap, o.l + dl);
+        lastLen = n.l;
+      }
+    }
+  });
+  function endDrag() {
+    if (!drag) return;
+    // click simplu (fără mișcare) pe o notă dintr-o selecție mare = rămâne doar ea selectată
+    if (drag.mode === 'move' && !drag.moved && !drag.shift) sel = new Set([drag.n]);
+    // după ce ai mutat mai multe note, se aud toate unde au ajuns
+    if (drag.mode === 'move' && drag.moved && sel.size > 1) [...sel].slice(0, 8).forEach(hear);
+    if (snapshot() !== drag.before) { history.push(drag.before); store(); }
+    drag = null; box = null;
+  }
+  cv.addEventListener('pointerup', endDrag);
+  cv.addEventListener('pointercancel', endDrag);
+
+  cv.addEventListener('wheel', e => {
+    e.preventDefault();
+    if (e.ctrlKey) {
+      ppb = Math.max(30, Math.min(800, ppb * (e.deltaY < 0 ? 1.12 : 1 / 1.12)));
+      $('zoom').value = ppb;
+    } else if (!playing) {
+      view = Math.max(0, view - e.deltaY / ppb);
+    }
+  }, { passive: false });
+
+  // ---------- tastatura PC-ului ----------
+  const KEYMAP = { a:60, w:61, s:62, e:63, d:64, f:65, t:66, g:67, y:68, h:69, u:70, j:71, k:72 };
+  const held = {};
+  window.addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+    if (e.code === 'Space') { e.preventDefault(); playing ? stop(false) : play(); return; }
+    if (e.key === 'Home') { stop(false); view = 0; return; }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); return; }
+    if ((e.key === 'Delete' || e.key === 'Backspace') && sel.size) {
+      remember(); notes = notes.filter(n => !sel.has(n)); sel.clear(); store(); return;
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') { e.preventDefault(); sel = new Set(notes); return; }
+    if (e.key === 'Escape') { sel.clear(); return; }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {   // copiază notele selectate imediat după ele
+      e.preventDefault();
+      if (!sel.size) return;
+      const list = [...sel];
+      const from = Math.min(...list.map(n => n.s)), to = Math.max(...list.map(n => n.s + n.l));
+      remember();
+      const copies = list.map(n => ({ ...n, s: n.s + (to - from) }));
+      notes.push(...copies); sel = new Set(copies); store();
+      copies.slice(0, 8).forEach(hear);
+      return;
+    }
+    const m = KEYMAP[e.key.toLowerCase()];
+    if (m && !e.repeat && !e.ctrlKey && !held[e.key.toLowerCase()]) {
+      audio();
+      held[e.key.toLowerCase()] = voice(m, ac.currentTime, instr);
+      lit.set(m, COLORS[color]);
+    }
+  });
+  window.addEventListener('keyup', e => {
+    const k = e.key.toLowerCase(), v = held[k];
+    if (v) { v.release(ac.currentTime); delete held[k]; lit.delete(KEYMAP[k]); }
+  });
+
+  // ---------- bara de sus ----------
+  COLORS.forEach((c, i) => {
+    const b = document.createElement('button');
+    b.className = 'swatch' + (i === color ? ' on' : '');
+    b.style.background = c; b.title = 'Culoarea ' + (i + 1);
+    b.onclick = () => {
+      color = i;
+      document.querySelectorAll('.swatch').forEach((s, j) => s.classList.toggle('on', j === i));
+      if ([...sel].some(n => n.c !== i)) { remember(); sel.forEach(n => n.c = i); store(); }
+    };
+    $('colors').appendChild(b);
+  });
+  $('bpm').value = bpm;
+  INSTR.forEach((x, i) => $('instr').add(new Option(x.name, i * 8)));
+  $('instr').add(new Option('Tobe', DRUMS));
+  $('instr').onchange = () => {
+    instr = +$('instr').value;
+    if ([...sel].some(n => n.p !== instr)) { remember(); sel.forEach(n => n.p = instr); store(); }
+    $('instr').blur();
+  };
+  const showInstr = n => { instr = n.p; $('instr').value = n.p === DRUMS ? DRUMS : Math.floor(n.p / 8) * 8; };
+  $('bpm').onchange = () => { stop(false); bpm = Math.max(30, Math.min(300, +$('bpm').value || 100)); $('bpm').value = bpm; store(); };
+  $('snap').onchange = () => { snap = +$('snap').value; };
+  $('zoom').value = ppb;
+  $('zoom').oninput = () => { ppb = +$('zoom').value; };
+  $('undo').onclick = undo;
+  $('clear').onclick = () => {
+    if (notes.length && confirm('Ștergi toate notele?')) { stop(false); remember(); notes = []; sel.clear(); view = 0; store(); }
+  };
+  // ---------- fișiere: JSON, MIDI, MP3 ----------
+  function download(data, name, type) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([data], { type })); a.download = name; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }
+  $('save').onclick = () => download(JSON.stringify({ bpm, notes }, null, 1), 'melodie.json', 'application/json');
+
+  // MIDI: o pistă, fiecare culoare pe canalul ei (așa se păstrează culorile la import)
+  function toMidi() {
+    const PPQ = 480, ev = [];
+    const tempo = Math.round(60e6 / bpm);
+    // un canal MIDI pentru fiecare pereche (culoare, instrument); tobele merg pe canalul 10
+    const chans = new Map(); let next = 0;
+    const chanOf = n => {
+      const k = n.c + ',' + n.p;
+      if (!chans.has(k)) {
+        if (n.p === DRUMS) chans.set(k, 9);
+        else { if (next === 9) next++; chans.set(k, next > 15 ? (next++ % 9) : next++); }
+      }
+      return chans.get(k);
+    };
+    for (const n of notes) {
+      const ch = chanOf(n);
+      ev.push({ t: Math.round(n.s * PPQ), o: 2, d: [0x90 | ch, n.m, n.v || 100] });
+      ev.push({ t: Math.round((n.s + n.l) * PPQ), o: 1, d: [0x80 | ch, n.m, 0] });
+    }
+    // notă text cu culorile, ca să le recunoască la import
+    const tag = 'PianoMaker:' + [...chans].map(([k, ch]) => ch + '=' + k).join(';');
+    const head = [{ t: 0, o: 0, d: [0xFF, 0x51, 3, tempo >> 16, (tempo >> 8) & 255, tempo & 255] },
+                  { t: 0, o: 0, d: [0xFF, 0x01, tag.length, ...[...tag].map(ch => ch.charCodeAt(0) & 127)] }];
+    for (const [k, ch] of chans) {
+      const p = +k.split(',')[1];
+      if (p !== DRUMS) head.push({ t: 0, o: 0, d: [0xC0 | ch, p] });
+    }
+    ev.sort((a, b) => a.t - b.t || a.o - b.o);
+    const trk = []; let last = 0;
+    const vlq = v => { const b = [v & 127]; while ((v >>= 7) > 0) b.unshift((v & 127) | 128); trk.push(...b); };
+    for (const e of head.concat(ev)) { vlq(e.t - last); last = e.t; trk.push(...e.d); }
+    vlq(0); trk.push(0xFF, 0x2F, 0);
+    const len = trk.length;
+    return new Uint8Array([
+      0x4D, 0x54, 0x68, 0x64, 0, 0, 0, 6, 0, 0, 0, 1, PPQ >> 8, PPQ & 255,
+      0x4D, 0x54, 0x72, 0x6B, len >>> 24, (len >> 16) & 255, (len >> 8) & 255, len & 255, ...trk]);
+  }
+  function fromMidi(buf) {
+    const b = new Uint8Array(buf); let p = 0;
+    const u32 = () => (b[p++] << 24 | b[p++] << 16 | b[p++] << 8 | b[p++]) >>> 0;
+    const u16 = () => b[p++] << 8 | b[p++];
+    const vlq = () => { let v = 0, c; do { c = b[p++]; v = v * 128 + (c & 127); } while (c & 128 && p < b.length); return v; };
+    const tag = () => String.fromCharCode(b[p++], b[p++], b[p++], b[p++]);
+    if (tag() !== 'MThd') throw new Error('nu e MIDI');
+    const hlen = u32(); u16(); const ntrk = u16(), div = u16(); p = 8 + hlen;
+    if (div & 0x8000) throw new Error('MIDI cu timp SMPTE nu e suportat');
+    const tempos = [], raw = [], prog = new Array(16).fill(0);
+    let pmColors = null;
+    for (let tr = 0; tr < ntrk && p < b.length; tr++) {
+      const id = tag(), len = u32(), end = p + len;
+      if (id !== 'MTrk') { p = end; tr--; continue; }
+      let tick = 0, run = 0; const open = new Map();
+      while (p < end) {
+        tick += vlq();
+        let st = b[p++];
+        if (st === 0xFF) {
+          const type = b[p++], l = vlq();
+          if (type === 0x51) tempos.push({ tick, us: b[p] << 16 | b[p + 1] << 8 | b[p + 2] });
+          if (type === 0x01) {
+            const txt = String.fromCharCode(...b.subarray(p, p + l));
+            if (txt.startsWith('PianoMaker:')) {
+              pmColors = {};
+              txt.slice(11).split(';').forEach(s => { const [ch, c] = s.split('='); if (c) pmColors[ch] = +c.split(',')[0]; });
+            }
+          }
+          p += l; continue;
+        }
+        if (st === 0xF0 || st === 0xF7) { p += vlq(); continue; }
+        if (st < 0x80) { st = run; p--; } else run = st;
+        const hi = st & 0xF0, ch = st & 15;
+        const d1 = b[p++], d2 = (hi === 0xC0 || hi === 0xD0) ? 0 : b[p++];
+        if (hi === 0xC0) { prog[ch] = d1; continue; }
+        const key = ch * 128 + d1;
+        if (hi === 0x90 && d2 > 0) {
+          if (!open.has(key)) open.set(key, []);
+          open.get(key).push({ tick, v: d2, p: ch === 9 ? DRUMS : prog[ch] });
+        } else if (hi === 0x80 || hi === 0x90) {
+          const q = open.get(key);
+          if (q && q.length) { const o = q.shift(); raw.push({ m: d1, s: o.tick, e: tick, v: o.v, p: o.p, ch, g: tr * 16 + ch }); }
+        }
+      }
+      p = end;
+    }
+    // ticks -> secunde (ținând cont de schimbările de tempo) -> timpi la tempoul de la început
+    tempos.sort((a, b) => a.tick - b.tick);
+    if (!tempos.length || tempos[0].tick > 0) tempos.unshift({ tick: 0, us: tempos.length ? tempos[0].us : 500000 });
+    let acc = 0;
+    tempos.forEach((t, i) => { t.sec = acc; const nx = tempos[i + 1]; if (nx) acc += (nx.tick - t.tick) * t.us / 1e6 / div; });
+    const secOf = tick => { let t = tempos[0]; for (const x of tempos) { if (x.tick <= tick) t = x; else break; } return t.sec + (tick - t.tick) * t.us / 1e6 / div; };
+    const bpm0 = 60e6 / tempos[0].us, beatOf = tick => secOf(tick) * bpm0 / 60;
+
+    const groups = new Map(), r = x => Math.round(x * 96) / 96, seen = new Map();
+    for (const n of raw) {
+      let m = n.m;
+      if (n.p === DRUMS) m = Math.max(LOW, Math.min(HIGH, m));
+      else { while (m < LOW) m += 12; while (m > HIGH) m -= 12; }
+      if (!groups.has(n.g)) groups.set(n.g, pmColors && pmColors[n.ch] != null ? pmColors[n.ch] : groups.size % COLORS.length);
+      const s = r(beatOf(n.s)), l = Math.max(1 / 32, r(beatOf(n.e) - beatOf(n.s)));
+      const k = m + '|' + s + '|' + n.p;          // aceeași notă dublată pe două piste = o singură notă
+      const old = seen.get(k);
+      if (old) { old.l = Math.max(old.l, l); old.v = Math.max(old.v, n.v); continue; }
+      const note = { m, s, l, c: groups.get(n.g), p: n.p, v: n.v };
+      seen.set(k, note);
+    }
+    const out = [...seen.values()].sort((a, b) => a.s - b.s);
+    // aceeași clapă cântată din nou înainte să se termine: prima notă se oprește acolo
+    const lastOn = new Map();
+    for (const n of out) {
+      const k = n.m + '|' + n.p + '|' + n.c, prev = lastOn.get(k);
+      if (prev && prev.s + prev.l > n.s) prev.l = Math.max(1 / 96, r(n.s - prev.s));
+      lastOn.set(k, n);
+    }
+    return { bpm: Math.round(bpm0 * 100) / 100, notes: out };
+  }
+  $('midi').onclick = () => download(toMidi(), 'melodie.mid', 'audio/midi');
+
+  // MP3: melodia e cântată „pe repede” într-un OfflineAudioContext, apoi codată cu lamejs
+  $('mp3').onclick = async () => {
+    if (!notes.length) return;
+    const btn = $('mp3'), label = btn.innerHTML;
+    btn.disabled = true; btn.textContent = 'Fac MP3…';
+    try {
+      const SR = 44100, spb = 60 / bpm;
+      const secs = notes.reduce((a, n) => Math.max(a, n.s + n.l), 0) * spb + 2;
+      // pe bucăți de câte 6 secunde: un singur context cu mii de note ar merge foarte încet
+      const pcm = new Float32Array(Math.ceil(SR * secs)), SEG = 6;
+      const sorted = notes.slice().sort((a, b) => a.s - b.s);
+      for (let k = 0, i = 0; k * SEG < secs; k++) {
+        const from = k * SEG, part = [];
+        while (i < sorted.length && 0.05 + sorted[i].s * spb < from + SEG) part.push(sorted[i++]);
+        if (!part.length) continue;
+        const len = part.reduce((a, n) => Math.max(a, 0.05 + (n.s + n.l) * spb - from), SEG) + 2;
+        const oc = new OfflineAudioContext(1, Math.ceil(SR * len), SR);
+        const gain = oc.createGain(); gain.gain.value = 0.5; gain.connect(oc.destination);
+        for (const n of part) voice(n.m, 0.05 + n.s * spb - from, n.p, n.v, oc, gain).release(0.05 + (n.s + n.l) * spb - from);
+        const data = (await oc.startRendering()).getChannelData(0), off = Math.round(from * SR);
+        for (let j = 0; j < data.length && off + j < pcm.length; j++) pcm[off + j] += data[j];
+        btn.textContent = 'Fac MP3… ' + Math.min(99, Math.round(from / secs * 100)) + '%';
+      }
+      for (let j = 0; j < pcm.length; j++) {   // limitator moale, ca să nu se strice sunetul la vârfuri
+        const x = pcm[j], a = Math.abs(x);
+        if (a > 0.7) pcm[j] = Math.sign(x) * (0.7 + 0.3 * Math.tanh((a - 0.7) / 0.3));
+      }
+      const enc = new lamejs.Mp3Encoder(1, SR, 192), parts = [];
+      const block = new Int16Array(1152);
+      for (let i = 0; i < pcm.length; i += 1152) {
+        const len = Math.min(1152, pcm.length - i);
+        for (let j = 0; j < len; j++) block[j] = Math.max(-1, Math.min(1, pcm[i + j])) * 32767;
+        const mp3 = enc.encodeBuffer(len === 1152 ? block : block.subarray(0, len));
+        if (mp3.length) parts.push(new Uint8Array(mp3));
+        if (i % (1152 * 400) === 0) await new Promise(r => setTimeout(r));   // să nu înghețe pagina
+      }
+      const tail = enc.flush(); if (tail.length) parts.push(new Uint8Array(tail));
+      download(new Blob(parts), 'melodie.mp3', 'audio/mpeg');
+    } catch (e) {
+      alert('N-am putut face MP3: ' + e.message);
+    }
+    btn.disabled = false; btn.innerHTML = label;
+  };
+
+  $('open').onclick = () => $('file').click();
+  $('file').onchange = async () => {
+    const f = $('file').files[0]; if (!f) return;
+    stop(false); remember();
+    try {
+      const buf = await f.arrayBuffer();
+      const head = String.fromCharCode(...new Uint8Array(buf, 0, Math.min(4, buf.byteLength)));
+      const data = head === 'MThd' ? fromMidi(buf) : JSON.parse(new TextDecoder().decode(buf));
+      if (!load(data)) throw new Error('nu e o melodie');
+      if (!notes.length) throw new Error('n-am găsit note în el');
+      store();
+    } catch (e) { history.pop(); alert('Nu pot deschide fișierul: ' + e.message); }
+    $('file').value = '';
+  };
+
+  window.__pm = { toMidi, fromMidi, noteRect, notes: () => notes, sel: () => sel };   // pentru teste
+
+  window.addEventListener('resize', layout);
+  layout();
+  requestAnimationFrame(draw);
+})();
+</script>
+</body>
+</html>
