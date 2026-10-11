@@ -24,8 +24,8 @@ jobs:
       - name: Check secrets
         id: secrets
         run: |
-          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
-            echo "::warning::CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID nu sunt setate - sar peste Cloudflare Pages."
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "::warning::CLOUDFLARE_API_TOKEN nu e setat - sar peste Cloudflare Pages."
             echo "ok=false" >> "$GITHUB_OUTPUT"
           else
             echo "ok=true" >> "$GITHUB_OUTPUT"
@@ -34,17 +34,25 @@ jobs:
         if: steps.secrets.outputs.ok == 'true'
         run: |
           id=$(printf '%s' "$CLOUDFLARE_ACCOUNT_ID" | tr -d '[:space:]')
-          if ! printf '%s' "$id" | grep -Eq '^[0-9a-f]{32}$'; then
-            echo "::error::CLOUDFLARE_ACCOUNT_ID nu arată ca un Account ID (trebuie 32 de caractere 0-9a-f, are ${#id})."
-            exit 1
-          fi
           accounts=$(curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" https://api.cloudflare.com/client/v4/accounts)
           if [ "$(echo "$accounts" | jq -r .success)" != true ]; then
             echo "::error::Tokenul nu e acceptat de Cloudflare: $(echo "$accounts" | jq -c '.errors')"
             exit 1
           fi
           echo "Tokenul vede $(echo "$accounts" | jq '.result | length') cont(uri)."
-          if ! echo "$accounts" | jq -e --arg id "$id" '.result | map(.id) | index($id)' >/dev/null; then
+          # Account ID lipsă sau greșit: îl luăm din token, dacă tokenul vede un singur cont
+          if ! printf '%s' "$id" | grep -Eq '^[0-9a-f]{32}$' || ! echo "$accounts" | jq -e --arg id "$id" '.result | map(.id) | index($id)' >/dev/null; then
+            if [ "$(echo "$accounts" | jq '.result | length')" = 1 ]; then
+              id=$(echo "$accounts" | jq -r '.result[0].id')
+              echo "::notice::Folosesc contul Cloudflare al tokenului (CLOUDFLARE_ACCOUNT_ID lipsă sau greșit)."
+            fi
+          fi
+          n=$(echo "$accounts" | jq '.result | length')
+          if ! printf '%s' "$id" | grep -Eq '^[0-9a-f]{32}$'; then
+            echo "::error::Nu am un Account ID bun: CLOUDFLARE_ACCOUNT_ID nu are 32 de caractere 0-9a-f (are ${#id}), iar tokenul vede $n conturi."
+            exit 1
+          fi
+          if [ "$n" != 0 ] && ! echo "$accounts" | jq -e --arg id "$id" '.result | map(.id) | index($id)' >/dev/null; then
             echo "::error::Tokenul nu are acces la contul din CLOUDFLARE_ACCOUNT_ID (ID greșit sau token pe alt cont)."
             exit 1
           fi
