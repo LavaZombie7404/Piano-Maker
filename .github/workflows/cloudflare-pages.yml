@@ -20,7 +20,7 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       PROJECT: piano-maker
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Check secrets
         id: secrets
         run: |
@@ -34,6 +34,11 @@ jobs:
         if: steps.secrets.outputs.ok == 'true'
         run: |
           id=$(printf '%s' "$CLOUDFLARE_ACCOUNT_ID" | tr -d '[:space:]')
+          # spații / rânduri noi lipite din greșeală în token
+          CLOUDFLARE_API_TOKEN=$(printf '%s' "$CLOUDFLARE_API_TOKEN" | tr -d '[:space:]"'''')
+          echo "::add-mask::$CLOUDFLARE_API_TOKEN"
+          echo "CLOUDFLARE_API_TOKEN=$CLOUDFLARE_API_TOKEN" >> "$GITHUB_ENV"
+| tr -d '[:space:]')
           accounts=$(curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" https://api.cloudflare.com/client/v4/accounts)
           if [ "$(echo "$accounts" | jq -r .success)" != true ]; then
             echo "::error::Tokenul nu e acceptat de Cloudflare: $(echo "$accounts" | jq -c '.errors')"
